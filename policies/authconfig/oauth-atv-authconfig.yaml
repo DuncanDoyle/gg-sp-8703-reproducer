@@ -1,0 +1,20 @@
+# Validates the Keycloak-issued access token and copies its 'groups' claim into Envoy dynamic metadata.
+apiVersion: extauth.solo.io/v1
+kind: AuthConfig
+metadata:
+  name: oauth-atv-auth
+  namespace: kgateway-system
+spec:
+  configs:
+    - name: keycloak_atv
+      oauth2:
+        accessTokenValidation:
+          jwt:
+            remoteJwks:
+              url: http://keycloak.keycloak.svc.cluster.local/realms/kgateway-demo/protocol/openid-connect/certs
+          # <metadata-key>: <claim-name>
+          # Stored in the 'envoy.filters.http.ext_authz' metadata namespace, nested under this step's name:
+          #   envoy.filters.http.ext_authz -> keycloak_atv -> groups
+          # The array claim ["TATA","TITI","TOTO"] is stored as a native protobuf ListValue, not as a string.
+          dynamicMetadataFromClaims:
+            groups: groups

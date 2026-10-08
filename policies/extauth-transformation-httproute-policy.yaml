@@ -1,0 +1,56 @@
+# ExtAuth (OAuth access token validation) + a 'regular' stage request transformation, which runs AFTER ext_authz
+# and can therefore read the 'groups' dynamic metadata that ext_authz emitted.
+#
+# ExtAuth nests the claims it maps to dynamic metadata under the name of the AuthConfig step, so the key is
+# '<step name>:<metadata key>' = 'keycloak_atv:groups' (':' is the default metadata key delimiter).
+#
+# Two request transformations, selected by path prefix:
+#
+#   /anything/raw      Puts dynamic_metadata("keycloak_atv:groups", ...) and Inja's isString()/isArray() checks in headers.
+#                      Shows that the value is a JSON *string* '["TATA","TITI","TOTO"]', not an array.
+#
+#   /anything/iterate  The use case from solo-projects#8703: iterate over the groups to build
+#                      {"contextual_tuples": {"tuple_keys": [{"object": "group:TATA"}, ...]}}.
+#                      BUG: dynamic_metadata() returns a string, so the Inja 'for' loop fails with
+#                      "object must be an array" and the request is rejected instead of being forwarded.
+apiVersion: enterprisekgateway.solo.io/v1alpha1
+kind: EnterpriseKgatewayTrafficPolicy
+metadata:
+  name: extauth-transformation-httproute-policy
+  namespace: default
+spec:
+  targetRefs:
+    - name: api-example-com
+      group: gateway.networking.k8s.io
+      kind: HTTPRoute
+  entExtAuth:
+    authConfigRef:
+      name: oauth-atv-auth
+      namespace: kgateway-system
+  entTransformation:
+    stages:
+      regular:            # 'regular' runs after ext_authz; 'early' would run before it and see no metadata
+        requests:
+          - matcher:
+              prefix: /anything/raw
+            transformation:
+              template:
+                parseBodyBehavior: DontParse
+                headers:
+                  # The value httpbin echoes back: '["TATA","TITI","TOTO"]'
+                  x-groups-raw: '{{ dynamic_metadata("keycloak_atv:groups", "envoy.filters.http.ext_authz") }}'
+                  # Inja's own type checks. Expected: is-array=true. Actual: is-string=true, is-array=false.
+                  x-groups-is-string: '{{ isString(dynamic_metadata("keycloak_atv:groups", "envoy.filters.http.ext_authz")) }}'
+                  x-groups-is-array: '{{ isArray(dynamic_metadata("keycloak_atv:groups", "envoy.filters.http.ext_authz")) }}'
+          - matcher:
+              prefix: /anything/iterate
+            transformation:
+              template:
+                parseBodyBehavior: DontParse
+                bodyTransformation:
+                  type: Body
+                  # Expected: groups is an array and the loop renders one tuple per group.
+                  # Actual:   groups is the string '["TATA","TITI","TOTO"]' -> "object must be an array".
+                  body: |
+                    {% set groups = dynamic_metadata("keycloak_atv:groups", "envoy.filters.http.ext_authz") %}
+                    {"contextual_tuples": {"tuple_keys": [{% for group in groups %}{"object": "group:{{ group }}"}{% if not loop.is_last %},{% endif %}{% endfor %}]}}

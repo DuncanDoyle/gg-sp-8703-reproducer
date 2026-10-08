@@ -1,0 +1,12 @@
+controller:
+  logLevel: info
+# discoveryNamespaceSelectors:
+# - matchExpressions:
+#   - key: environment
+#     operator: In
+#     values:
+#     - prod
+#   matchLabels:
+#     version: v2
+# - matchLabels:
+#     version: v3

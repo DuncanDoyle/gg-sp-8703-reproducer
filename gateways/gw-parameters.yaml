@@ -1,0 +1,10 @@
+apiVersion: enterprisekgateway.solo.io/v1alpha1
+kind: EnterpriseKgatewayParameters
+metadata:
+  name: custom-gw-params
+  namespace: ingress-gw
+spec:
+  kube:
+    envoyContainer:
+      bootstrap:
+        logLevel: info
